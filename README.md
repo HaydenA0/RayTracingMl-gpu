@@ -7,5 +7,6 @@ Build a ray tracer in Rust using the **wgpu** crate, and then improve the render
 
 # First Image
 
-![First Image](./images/test.png)
+![First Image](./images/xy.png)
+![Second Image](./images/cos(x)sin(y)blend.png)
 

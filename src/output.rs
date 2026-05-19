@@ -1,4 +1,9 @@
-pub fn gen_image(pixels_vec: Vec<f32>, width: u32, height: u32, stride: usize) -> image::RgbaImage {
+pub fn gen_image(
+    pixels_vec: &Vec<f32>,
+    width: u32,
+    height: u32,
+    stride: usize,
+) -> image::RgbaImage {
     let mut image = image::RgbaImage::new(width, height);
 
     let floats_per_row = stride / 4;
@@ -16,8 +21,4 @@ pub fn gen_image(pixels_vec: Vec<f32>, width: u32, height: u32, stride: usize) -
     }
 
     image
-}
-
-pub fn save_image(image: image::RgbaImage, path: &str) {
-    image.save(path).unwrap();
 }

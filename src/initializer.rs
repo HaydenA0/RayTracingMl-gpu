@@ -1,3 +1,5 @@
+use crate::camera::{Camera, CameraUniform};
+
 pub async fn create_gpu_context() -> (wgpu::Device, wgpu::Queue, wgpu::Adapter, wgpu::Instance) {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         // Be using Vulkan since on Linux
@@ -42,6 +44,8 @@ pub fn create_storage_texture(
     path: &str,
     width: u32,
     height: u32,
+    camera_uniform: CameraUniform,
+    camera_buffer: &wgpu::Buffer,
 ) -> (wgpu::Texture, wgpu::BindGroupLayout) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         size: wgpu::Extent3d {
@@ -63,24 +67,40 @@ pub fn create_storage_texture(
 
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &[wgpu::BindGroupLayoutEntry {
-            // Binding 0
-            //
-            binding: 0,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                // Binding 0
+                // texture
+                binding: 0,
 
-            visibility: wgpu::ShaderStages::COMPUTE,
+                visibility: wgpu::ShaderStages::COMPUTE,
 
-            count: None,
+                count: None,
 
-            ty: wgpu::BindingType::StorageTexture {
-                format: wgpu::TextureFormat::Rgba32Float,
+                ty: wgpu::BindingType::StorageTexture {
+                    format: wgpu::TextureFormat::Rgba32Float,
 
-                access: wgpu::StorageTextureAccess::WriteOnly,
+                    access: wgpu::StorageTextureAccess::WriteOnly,
 
-                view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
             },
-        }],
+            // Binding 1
+            // camera
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                count: None,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            },
+        ],
     });
+
+    queue.write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera_uniform));
 
     return (texture, bind_group_layout);
 }
@@ -90,6 +110,13 @@ pub fn build_compute_pipeline(
     bind_group_layout: &wgpu::BindGroupLayout,
     shader: &str,
 ) -> wgpu::ComputePipeline {
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Camera Buffer"),
+        size: std::mem::size_of::<CameraUniform>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Compute Pipeline Layout"),
         immediate_size: 0,
@@ -120,16 +147,26 @@ pub fn dispatch_compute_pass(
     workgroups: (u32, u32, u32),
     width: u32,
     height: u32,
+    camera_uniform: CameraUniform,
+    camera_buffer: &wgpu::Buffer,
 ) -> (wgpu::Buffer, usize) {
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Raytracer Bind Group"),
         layout: bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&texture_view),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                // binding: 0,
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&texture_view),
+            },
+            // Binding 1
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: camera_buffer.as_entire_binding(),
+            },
+        ],
     });
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
