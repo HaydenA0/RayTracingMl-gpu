@@ -1,5 +1,3 @@
-use bytemuck;
-use wgpu;
 mod initializer;
 mod output;
 use std::{env, fs};
@@ -24,10 +22,10 @@ fn load_shader(shader_path: &str) -> String {
 }
 
 fn main() {
-    let width = 800;
+    let width = 801;
     let height = 400;
 
-    let (device, queue, adapter, instance) = pollster::block_on(initializer::create_gpu_context());
+    let (device, queue, _, _) = pollster::block_on(initializer::create_gpu_context());
 
     let (texture, bind_group_layout) = initializer::create_storage_texture(
         &device,
@@ -43,7 +41,7 @@ fn main() {
         initializer::build_compute_pipeline(&device, &bind_group_layout, &shader_source_code);
 
     let workgroup_size = 16u32;
-    let output_buffer = initializer::dispatch_compute_pass(
+    let (output_buffer, stride) = initializer::dispatch_compute_pass(
         &device,
         &queue,
         &compute_pipeline,
@@ -60,7 +58,7 @@ fn main() {
 
     let pixels_vec = initializer::from_buffer_to_vec(&device, &output_buffer);
 
-    let image = output::gen_image(pixels_vec, width, height);
+    let image = output::gen_image(pixels_vec, width, height, stride);
     output::save_image(image, "test.png");
 
     println!("Done");

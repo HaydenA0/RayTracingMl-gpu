@@ -120,7 +120,7 @@ pub fn dispatch_compute_pass(
     workgroups: (u32, u32, u32),
     width: u32,
     height: u32,
-) -> wgpu::Buffer {
+) -> (wgpu::Buffer, usize) {
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -189,7 +189,7 @@ pub fn dispatch_compute_pass(
     );
 
     queue.submit(std::iter::once(encoder.finish()));
-    return output_buffer;
+    return (output_buffer, (bytes_per_row as usize));
 }
 
 pub fn from_buffer_to_vec(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<f32> {
