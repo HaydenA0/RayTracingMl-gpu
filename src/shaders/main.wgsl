@@ -17,6 +17,7 @@ struct Sphere {
     radius: f32,
 };
 
+
 struct Ray {
     origin: vec3<f32>,
     direction: vec3<f32>,
@@ -38,6 +39,23 @@ fn new_ray(origin: vec3<f32>, direction: vec3<f32>) -> Ray {
     return Ray(origin, direction);
 }
 
+fn check_intersection(ray: Ray, sphere: Sphere) -> bool {
+    let oc = ray.origin - sphere.center;
+    let a = dot(ray.direction, ray.direction);
+    let b = dot(oc, ray.direction);
+    let c = dot(oc, oc) - sphere.radius * sphere.radius;
+    let discriminant = b * b - a * c;
+
+    if discriminant > 0.0 {
+        let t = (-b - sqrt(discriminant)) / a;
+        if t > 0.0 {
+            return true;
+        }
+    }
+    return false;
+
+}
+
 @group(0) @binding(1)
 var<uniform> camera: CameraUniform;
 
@@ -45,6 +63,7 @@ var<uniform> camera: CameraUniform;
 var<storage, read> spheres: array<Sphere>;
 
 @compute @workgroup_size(16, 16, 1)
+
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = vec2<f32>(textureDimensions(output_texture));
     let uv = vec2<f32>(id.xy) / dims;
@@ -58,10 +77,22 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         camera.basis_w
     );
 
-    let color = vec4<f32>(
-        ray_direction * 0.5 + vec3<f32>(0.5),
-        1.0
-    );
+    let ray_origin = camera.origin;
+    let ray = new_ray(ray_origin, ray_direction);
+
+    let spheres_count = arrayLength(&spheres);
+
+    var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+
+    for (var i = 0u; i < spheres_count; i = i + 1u) {
+        let sphere = spheres[i];
+
+        if (check_intersection(ray, sphere)) {
+            color = vec4<f32>(0.5, 0.1, 0.1, 1.0);
+        } else {
+            color = vec4<f32>(0.1, 0.1, 0.1, 1.0);
+        }
+    }
 
     textureStore(output_texture, vec2<i32>(id.xy), color);
 }

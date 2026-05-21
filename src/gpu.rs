@@ -1,5 +1,3 @@
-use std::{env, fs};
-
 use log::debug;
 
 use crate::camera::CameraBuffer;
@@ -7,21 +5,64 @@ use crate::initializer;
 use crate::output;
 use crate::spheres::SphereWorld;
 
-pub fn load_shader(path: &str) -> String {
-    debug!("Loading shader from {}...", path);
-    match fs::read_to_string(path) {
-        Ok(content) => {
-            debug!("Shader loaded");
-            content
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+
+pub fn load_shaders(path: &str, names: Vec<&str>) -> String {
+    // * matches all files
+    let mut source_code = String::new();
+    let path = Path::new(path);
+
+    let file_names: Vec<String> = if names.len() == 1 && names[0] == "*" {
+        let mut files: Vec<_> = std::fs::read_dir(path)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "Could not read shader directory {}: {}",
+                    path.display(),
+                    err
+                )
+            })
+            .filter_map(|entry| {
+                entry.ok().and_then(|e| {
+                    let p = e.path();
+                    if p.extension()?.to_str()? == "wgsl" {
+                        p.file_stem()?.to_str().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        files.sort();
+
+        let main_idx = files.iter().position(|f| f == "main");
+        if let Some(i) = main_idx {
+            let main = files.remove(i);
+            files.push(main);
         }
-        Err(err) => {
-            match env::current_dir() {
-                Ok(path) => debug!("Current directory: {}", path.display()),
-                Err(e) => debug!("Error getting current directory: {}", e),
+
+        files
+    } else {
+        names.iter().map(|s| s.to_string()).collect()
+    };
+
+    for name in &file_names {
+        let file_path = path.join(format!("./{}.wgsl", name));
+        let mut file = match File::open(&file_path) {
+            Ok(file) => file,
+            Err(err) => panic!("Could not open file {}: {}", file_path.display(), err),
+        };
+        let mut buffer = String::new();
+        match file.read_to_string(&mut buffer) {
+            Ok(_) => {
+                source_code.push_str(&buffer);
             }
-            panic!("Error reading shader file: {}", err);
-        }
+            Err(err) => panic!("Could not read file {}: {}", file_path.display(), err),
+        };
     }
+    source_code
 }
 
 pub struct Pass {
@@ -48,65 +89,61 @@ impl Gpu {
         debug!("Initializing GPU...");
         let (device, queue) = initializer::create_gpu_context().await;
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Raytracer Bind Group Layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        count: None,
-                        ty: wgpu::BindingType::StorageTexture {
-                            format: wgpu::TextureFormat::Rgba32Float,
-                            access: wgpu::StorageTextureAccess::WriteOnly,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                        },
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytracer Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    count: None,
+                    ty: wgpu::BindingType::StorageTexture {
+                        format: wgpu::TextureFormat::Rgba32Float,
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        view_dimension: wgpu::TextureViewDimension::D2,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        count: None,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        count: None,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                },
+            ],
+        });
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Raytracer Pipeline Layout"),
-                immediate_size: 0,
-                bind_group_layouts: &[Some(&bind_group_layout)],
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Raytracer Pipeline Layout"),
+            immediate_size: 0,
+            bind_group_layouts: &[Some(&bind_group_layout)],
+        });
 
-        let shader_module =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Raytracer Shader"),
-                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-            });
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Raytracer Shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
-        let compute_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Raytracer Pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader_module,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Raytracer Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         debug!("GPU initialized with forever pipeline resources");
         Self {
@@ -167,18 +204,17 @@ impl Gpu {
             1,
         );
 
-        let mut encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Compute Encoder"),
-                });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Compute Encoder"),
+            });
 
         {
-            let mut compute_pass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Raytracer Pass"),
-                    timestamp_writes: None,
-                });
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Raytracer Pass"),
+                timestamp_writes: None,
+            });
             compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
             compute_pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
@@ -187,14 +223,12 @@ impl Gpu {
         let bytes_per_row = (width * 16).next_multiple_of(256);
         debug!("bytes_per_row: {}", bytes_per_row);
 
-        let output_buffer = self
-            .device
-            .create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Output Buffer"),
-                size: (bytes_per_row * height) as u64,
-                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Output Buffer"),
+            size: (bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfoBase {
