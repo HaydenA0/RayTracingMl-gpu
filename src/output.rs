@@ -1,9 +1,12 @@
+use log::debug;
+
 pub fn gen_image(
     pixels_vec: &Vec<f32>,
     width: u32,
     height: u32,
     stride: usize,
 ) -> image::RgbaImage {
+    debug!("Generating image from buffer ({}x{})...", width, height);
     let mut image = image::RgbaImage::new(width, height);
 
     let floats_per_row = stride / 4;

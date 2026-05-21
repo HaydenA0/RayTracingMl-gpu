@@ -6,8 +6,10 @@ edition = "2024"
 [dependencies]
 bytemuck = "1.25.0"
 glam = "0.32.1"
+env_logger = "0.11"
 image = "0.25.10"
 indicatif = "0.18.4"
+log = "0.4"
 pollster = "0.4.0"
 wgpu = "29.0.3"
 
