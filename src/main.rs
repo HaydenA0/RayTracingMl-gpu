@@ -1,11 +1,11 @@
-mod buffers;
 mod camera;
 mod gpu;
 mod initializer;
 mod output;
+mod spheres;
 mod utils;
+
 use log::debug;
-use std::{env, fs};
 
 fn main() {
     env_logger::init();
@@ -15,17 +15,23 @@ fn main() {
 
     debug!("Image size: {}x{}", width, height);
 
-    // to create a CPU struct to hold the objects
-    // but for now we'll just define it here
-
     let camera = camera::Camera::new(width as f32 / height as f32, 60.0);
+    let spheres_data = vec![
+        spheres::Sphere::new([0.0, 0.0, -1.0], 0.5),
+        spheres::Sphere::new([1.0, 0.0, -1.0], 0.3),
+    ];
 
-    let gpu = gpu::Gpu::new(&camera);
+    let shader_source = gpu::load_shader("src/shaders/main.wgsl");
+    let gpu = pollster::block_on(gpu::Gpu::new(&shader_source));
 
-    let pass_from_gpu = gpu.compute("images/test.png", "src/shaders/main.wgsl", width, height);
+    let camera_buffer = camera::CameraBuffer::new(&camera, &gpu.device);
+    let mut sphere_world = spheres::SphereWorld::new(spheres_data, &gpu.device);
+    sphere_world.update_buffers(&gpu.device, &gpu.queue);
+
+    let pass = gpu.compute(width, height, &camera_buffer, &sphere_world);
 
     debug!("Generating image...");
-    _ = pass_from_gpu.to_image(width, height).save("test.png");
+    pass.to_image(width, height).save("test.png").unwrap();
     debug!("Image saved to test.png");
 
     debug!("Done");

@@ -36,7 +36,7 @@ pub struct CameraUniform {
 }
 
 impl CameraUniform {
-    pub fn update_from_cpucamera(&mut self, camera: &Camera) {
+    pub fn update_from_camera(&mut self, camera: &Camera) {
         self.origin = camera.origin.into();
         self.basis_u = camera.basis_u.into();
         self.basis_v = camera.basis_v.into();
@@ -45,9 +45,9 @@ impl CameraUniform {
     }
 
     pub fn new(camera: &Camera) -> Self {
-        let mut camera_uniform = Self::default();
-        camera_uniform.update_from_cpucamera(camera);
-        camera_uniform
+        let mut uniform = Self::default();
+        uniform.update_from_camera(camera);
+        uniform
     }
 }
 
@@ -63,5 +63,27 @@ impl Default for CameraUniform {
             basis_w: [0.0; 3],
             aspect_ratio: 0.0,
         }
+    }
+}
+
+pub struct CameraBuffer {
+    pub uniform: CameraUniform,
+    pub buffer: wgpu::Buffer,
+}
+
+impl CameraBuffer {
+    pub fn new(camera: &Camera, device: &wgpu::Device) -> Self {
+        let uniform = CameraUniform::new(camera);
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Camera"),
+            size: std::mem::size_of::<CameraUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self { uniform, buffer }
+    }
+
+    pub fn write_to_gpu(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&self.uniform));
     }
 }
